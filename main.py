@@ -34,7 +34,7 @@ GITHUB_TOKEN = token_part1 + token_part2 + token_part3
 GIST_ID = "1050e1f10d7f5591f4f26ca53f2189e9"
 
 # File name for Gist
-GIST_FILE_NAME = 'progrjess.json'
+GIST_FILE_NAME = 'progrjessmain.json'
 
 # Batch processing settings
 BATCH_SIZE = 100
