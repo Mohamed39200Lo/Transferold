@@ -9,6 +9,7 @@ import json
 import asyncio
 import requests
 from packaging import version
+import time
 
 # Configure logging
 logging.basicConfig(
@@ -38,7 +39,7 @@ GIST_FILE_NAME = 'progrjessmain.json'
 
 # Batch processing settings
 BATCH_SIZE = 100
-BATCH_PAUSE = 30  # Seconds to pause after each batch
+BATCH_PAUSE = 60  # Increased pause to reduce frequency of operations
 
 # Initialize Telethon client
 client = TelegramClient('session', api_id, api_hash)
@@ -148,6 +149,18 @@ async def load_progress():
             data = json.loads(content)
             logger.info(f"Loaded progress from Gist: last_message_id={data.get('last_message_id', 0)}")
             return data.get('last_message_id', 0)
+        elif response.status_code == 403 and "rate limit exceeded" in response.text.lower():
+            logger.warning("GitHub API rate limit exceeded while loading progress. Waiting and retrying.")
+            reset_time = response.headers.get('X-RateLimit-Reset')
+            if reset_time:
+                wait_time = int(reset_time) - int(time.time()) + 5
+                if wait_time > 0:
+                    logger.info(f"Waiting {wait_time} seconds for rate limit reset.")
+                    await asyncio.sleep(wait_time)
+                    return await load_progress()  # Retry
+            else:
+                logger.error("Rate limit exceeded and no reset time provided. Skipping progress load.")
+                return 0
         else:
             logger.error(f"Failed to load Gist: {response.status_code}, {response.text}")
             return 0
@@ -155,8 +168,10 @@ async def load_progress():
         logger.error(f"Error loading progress from Gist: {str(e)}")
         return 0
 
-async def save_progress(message_id):
-    """Save the last processed message ID to the Gist."""
+async def save_progress(message_id, force=False):
+    """Save the last processed message ID to the Gist, with rate limit handling."""
+    if not force and message_id % BATCH_SIZE != 0:
+        return  # Only save progress at batch intervals or when forced
     data = {'last_message_id': message_id}
     headers = {"Authorization": f"token {GITHUB_TOKEN}"}
     payload = {
@@ -170,6 +185,17 @@ async def save_progress(message_id):
         response = requests.patch(f"https://api.github.com/gists/{GIST_ID}", headers=headers, json=payload)
         if response.status_code == 200:
             logger.info(f"Saved progress to Gist: last_message_id={message_id}")
+        elif response.status_code == 403 and "rate limit exceeded" in response.text.lower():
+            logger.warning("GitHub API rate limit exceeded while saving progress. Waiting and retrying.")
+            reset_time = response.headers.get('X-RateLimit-Reset')
+            if reset_time:
+                wait_time = int(reset_time) - int(time.time()) + 5
+                if wait_time > 0:
+                    logger.info(f"Waiting {wait_time} seconds for rate limit reset.")
+                    await asyncio.sleep(wait_time)
+                    await save_progress(message_id, force=True)  # Retry
+            else:
+                logger.error("Rate limit exceeded and no reset time provided. Skipping progress save.")
         else:
             logger.error(f"Failed to update Gist: {response.status_code}, {response.text}")
     except Exception as e:
@@ -219,7 +245,7 @@ async def transfer_messages():
                     last_group_id = group_id
                     last_topic_id = target_topic_id
 
-                    # Check if this is the last message in the group (by fetching next message)
+                    # Check if this is the last message in the group
                     next_messages = await client.get_messages(source_chat_id, ids=[message.id + 1])
                     next_message = next_messages[0] if next_messages else None
                     if not next_message or next_message.grouped_id != group_id:
@@ -267,7 +293,7 @@ async def transfer_messages():
                             logger.debug(f"Skipping message ID {message.id}: Unsupported media type")
                             continue
                         # Check media size
-                        if hasattr(message.media, 'document') and message.media.document.size > 2 * 1024 * 1024 * 1024:
+                        if hasattr(msg.media, 'document') and msg.media.document.size > 2 * 1024 * 1024 * 1024:
                             logger.warning(f"Skipping message ID {message.id}: Media size exceeds 2GB")
                             continue
                         # Copy supported media
@@ -287,7 +313,7 @@ async def transfer_messages():
                     
                     logger.info(f"Transferred message ID {message.id} to topic {target_topic_id or 'default'}")
                     
-                    # Save progress
+                    # Save progress only at batch intervals
                     await save_progress(message.id)
                     
                     # Increment batch counter
@@ -320,6 +346,9 @@ async def transfer_messages():
         logger.error(f"Error iterating messages: {str(e)}")
     
     finally:
+        # Save final progress before disconnecting
+        if batch_count > 0:
+            await save_progress(last_message_id + batch_count, force=True)
         await client.disconnect()
         logger.info("Client disconnected")
 
