@@ -293,7 +293,7 @@ async def transfer_messages():
                             logger.debug(f"Skipping message ID {message.id}: Unsupported media type")
                             continue
                         # Check media size
-                        if hasattr(msg.media, 'document') and msg.media.document.size > 2 * 1024 * 1024 * 1024:
+                        if hasattr(message.media, 'document') and message.media.document.size > 2 * 1024 * 1024 * 1024:
                             logger.warning(f"Skipping message ID {message.id}: Media size exceeds 2GB")
                             continue
                         # Copy supported media
