@@ -39,7 +39,7 @@ GIST_FILE_NAME = 'progrjessmain.json'
 
 # Batch processing settings
 BATCH_SIZE = 100
-BATCH_PAUSE = 60  # Increased pause to reduce frequency of operations
+BATCH_PAUSE = 30  # Increased pause to reduce frequency of operations
 
 # Initialize Telethon client
 client = TelegramClient('session', api_id, api_hash)
@@ -323,7 +323,7 @@ async def transfer_messages():
                         logger.info(f"Processed {batch_count} messages. Pausing for {BATCH_PAUSE} seconds.")
                         await asyncio.sleep(BATCH_PAUSE)
                     else:
-                        await asyncio.sleep(4)  # Increased delay to avoid rate limits
+                        await asyncio.sleep(2)  # Increased delay to avoid rate limits
 
                 except FloodWaitError as e:
                     logger.warning(f"Flood wait error: Waiting for {e.seconds} seconds")
